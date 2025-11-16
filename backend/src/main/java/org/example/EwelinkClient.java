@@ -19,8 +19,8 @@ public class EwelinkClient {
 
 
     public EwelinkClient(WebClient.Builder builder,
-                         @Value("${ewelink.base-url}") String baseUrl,
-                         @Value("${EWELINK_TOKEN:}") String token) {
+                         @Value("${ewelink.baseurl}") String baseUrl,
+                         @Value("${ewelink.token:}") String token) {
         this.webClient = builder.baseUrl(baseUrl).build();
         this.token = token;
     }
