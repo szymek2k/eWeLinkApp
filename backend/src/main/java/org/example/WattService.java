@@ -7,6 +7,9 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.util.retry.Retry;
 
+import java.io.UnsupportedEncodingException;
+import java.security.InvalidKeyException;
+import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 
 @Service
@@ -54,15 +57,21 @@ public class WattService {
     public Flux<WattUsage> pollWattReactive() {
         System.out.println(email + "; " + password + "; " + region + "; " + deviceId);
         return Flux.interval(Duration.ofSeconds(5))
-                .flatMap(i -> getToken()
-                        .flatMapMany(t -> deviceClient.getWattUsage(deviceId, t).flux())
-                        .retryWhen(Retry.fixedDelay(1, Duration.ofSeconds(2))
-                                .filter(ex -> ex instanceof org.springframework.web.reactive.function.client.WebClientResponseException.Unauthorized)
-                                .doBeforeRetry(signal -> invalidateToken()))
+                .flatMap(i -> {
+                            try {
+                                return getToken()
+                                        .flatMapMany(t -> deviceClient.getWattUsage(deviceId, t).flux())
+                                        .retryWhen(Retry.fixedDelay(1, Duration.ofSeconds(2))
+                                                .filter(ex -> ex instanceof WebClientResponseException.Unauthorized)
+                                                .doBeforeRetry(signal -> invalidateToken()));
+                            } catch (UnsupportedEncodingException | NoSuchAlgorithmException | InvalidKeyException e) {
+                                throw new RuntimeException(e);
+                            }
+                        }
                 );
     }
 
-    private Mono<String> getToken() {
+    private Mono<String> getToken() throws UnsupportedEncodingException, NoSuchAlgorithmException, InvalidKeyException {
         if (token != null) {
             return Mono.just(token);
         }
