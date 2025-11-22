@@ -19,18 +19,6 @@ public class WattService {
 
     private final EwelinkAuthClient authClient;
 
-//    @Value("${ewelink_email}")
-//    private String email;
-//
-//    @Value("${ewelink_password}")
-//    private String password;
-//
-//    @Value("${ewelink_region}")
-//    private String region;
-//
-//    @Value("${ewelink_device_id}")
-//    private String deviceId;
-
     @Value("#{systemEnvironment['ewelink_email']}")
     private String email;
 
@@ -75,8 +63,9 @@ public class WattService {
         if (token != null) {
             return Mono.just(token);
         }
-        return authClient.login(email, password, region)
-                .doOnNext(t -> this.token = t);
+//        return authClient.login()
+//                .doOnNext(t -> this.token = t);
+        return Mono.empty();
     }
 
     private void invalidateToken() {
