@@ -1,4 +1,4 @@
-package org.example;
+package org.example.controllers;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -23,12 +23,12 @@ public class AuthStartController {
     private String app_secret = "";
 
     @Value("${ewelink.redirect.uri}")
-    private String redirectUri;
+    private String redirectUri="http://localhost:8080/auth/return";
 
     /**
      * Reaktywny endpoint startowy: http://localhost:8080/auth/login
      * Zwraca Mono<String> z instrukcją przekierowania do eWeLink.
-     *
+     * <p>
      * https://coolkit-technologies.github.io/eWeLink-API/#/en/OAuth2.0?id=v2-interface-signature-rules
      * Rozdział 'Authorization Page Description'
      * Wywoływane z frontu http://localhost:4200/
