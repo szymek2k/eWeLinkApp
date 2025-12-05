@@ -23,16 +23,16 @@ public class WattApplication implements CommandLineRunner {
     private String region;
     private final WattService wattService;
 
-    // private final AuthService authService;
+    private final EwelinkAuthClient ewelinkAuthClient;
 
-    public WattApplication(WattService wattService) {
+    public WattApplication(WattService wattService, EwelinkAuthClient ewelinkAuthClient) {
         this.wattService = wattService;
-        // this.authService = authService;
+        this.ewelinkAuthClient = ewelinkAuthClient;
     }
 
     public static void main(String[] args) {
-        SpringApplication.run(WattApplication.class, args);
-        // SpringApplication.run(WattApplication.class, args);
+         SpringApplication.run(WattApplication.class, args);
+        //SpringApplication.run(WattApplication.class, args);
         System.out.println("Hello world!");
     }
 
@@ -44,7 +44,7 @@ public class WattApplication implements CommandLineRunner {
 
     @Override
     public void run(String... args) {
-//        authService.exchangeCodeForTokensAndConnect("7b41d364-188f-4dec-8583-ee991448fe94")
+//        ewelinkAuthClient.exchangeCodeForTokensAndConnect("")
 //                .thenReturn("<html><body><h1>Autoryzacja udana!</h1><p>Tokeny pobrano i rozpoczęto połączenie WebSocket.</p></body></html>")
 //                .onErrorResume(e -> {
 //                    System.err.println("Błąd w trakcie autoryzacji: " + e.getMessage());

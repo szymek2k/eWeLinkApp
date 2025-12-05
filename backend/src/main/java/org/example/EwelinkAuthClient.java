@@ -1,6 +1,7 @@
 package org.example;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.springframework.web.reactive.socket.WebSocketMessage;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.example.dto.TokenData;
@@ -54,7 +55,7 @@ public class EwelinkAuthClient {
     }
 
     // EXCHANGE authorization code for tokens and then connect WS
-    public Mono<Void> exchangeCodeForTokensAndConnect(String code) {
+    public Mono<OAuthData> exchangeCodeForTokensAndConnect(String code) {
         System.out.println("-> Rozpoczynam wymianę kodu autoryzacyjnego na tokeny...");
         return performTokenExchange("authorization_code", code)
                 .flatMap(data -> {
@@ -62,42 +63,110 @@ public class EwelinkAuthClient {
                     System.out.println("-> Sukces. accessToken present: " + (data.getAccessToken() != null));
                     scheduleRefreshIfNeeded(data);
 
-
+                    System.out.println("exchangeCodeForTokensAndConnect " + data.toString());
                     String wsUrl = getWebSocketUrlForRegion("eu"); // v2 nie zwraca region - domyślnie eu
-                    return connectAndAuthenticateWebSocket(wsUrl, data.getAccessToken());
+                    return connectAndAuthenticateWebSocket(wsUrl, data).thenReturn(data);
                 });
     }
 
     // Connect and authenticate WS using v2 userOnline message
-    private Mono<Void> connectAndAuthenticateWebSocket(String wsUrl, String accessToken) {
+    private Mono<Void> connectAndAuthenticateWebSocket(String wsUrl, OAuthData data) {
         System.out.println("-> Łączenie z WebSocket: " + wsUrl);
 
+        return wsClient.execute(
+                URI.create(wsUrl),
+                session -> {
 
-        return wsClient.execute(URI.create(wsUrl), session -> {
+                    // --- BUILD user.online ---
+                    long ts = System.currentTimeMillis() / 1000;
+                    String tsStr = String.valueOf(ts);
+                    String nonce = UUID.randomUUID().toString().substring(0, 8);
 
-            String auth = buildWsAuthMessage(accessToken);
-            System.out.println("-> Wysyłam user.online: " + auth);
+                    ObjectNode online = mapper.createObjectNode();
+                    online.put("action", "user.online");
+                    online.put("userAgent", "app");
+                    online.put("version", 8);
+                    online.put("appid", APP_ID);
+                    online.put("ts", tsStr);
+                    online.put("nonce", nonce);
+                    online.put("sequence", tsStr);
+                    online.put("at", data.getAccessToken());
 
-            Mono<Void> authSend = session.send(Mono.just(session.textMessage(auth)));
+                    // --- CHANGED: poprawiony sign ---
+                    String signPayload = APP_ID + data.getAccessToken() + nonce + tsStr;
+                    String sign = SignatureHelper.sha256Hex(APP_SECRET, signPayload); // ADDED: correct order
+                    online.put("sign", sign);
 
-            // Ping co 10s
-            Disposable ping = Flux.interval(Duration.ofSeconds(10))
-                    .flatMap(t -> {
-                        long ts = System.currentTimeMillis() / 1000;
-                        String seq = String.valueOf(ts);
-                        String pingMsg = "{ \"action\":\"ping\", \"ts\": " + ts + ", \"sequence\":\"" + seq + "\" }";
-                        return session.send(Mono.just(session.textMessage(pingMsg)));
-                    })
-                    .subscribe();
+                    String onlineStr;
+                    try {
+                        onlineStr = mapper.writeValueAsString(online);
+                    } catch (Exception e) {
+                        return Mono.error(e);
+                    }
 
-            return authSend
-                    .thenMany(session.receive()
+                    System.out.println("-> WS SEND user.online: " + onlineStr);
+
+                    // --- SEND user.online ---
+                    Mono<Void> sendOnline = session.send(
+                            Mono.just(session.textMessage(onlineStr))
+                    );
+
+                    // --- PING ---
+                    Disposable ping = Flux.interval(Duration.ofSeconds(10))
+                            .flatMap(tick -> {
+                                long nowTs = System.currentTimeMillis() / 1000;
+                                String nowTsStr = String.valueOf(nowTs);
+                                String pingMsg = "{ \"action\":\"ping\", \"ts\": " + nowTs + ", \"sequence\":\"" + nowTsStr + "\" }";
+                                return session.send(Mono.just(session.textMessage(pingMsg)));
+                            })
+                            .subscribe();
+
+                    // --- RECEIVE + SEND query.all ---
+                    Mono<Void> receive = session.receive()
                             .map(WebSocketMessage::getPayloadAsText)
-                            .doOnNext(msg -> System.out.println("WS: " + msg))
-                    )
-                    .doFinally(sig -> ping.dispose()) // zatrzymanie pingu gdy rozłączenie
-                    .then();
-        });
+                            .doOnNext(msg -> {
+                                System.out.println("WS RECV: " + msg);
+
+                                // czekamy na user.online OK
+                                if (msg.contains("\"error\":0") && msg.contains("user.online")) {
+
+                                    try {
+                                        long ts2 = System.currentTimeMillis() / 1000;
+                                        String ts2Str = String.valueOf(ts2);
+                                        String nonce2 = UUID.randomUUID().toString().substring(0, 8);
+
+                                        ObjectNode query = mapper.createObjectNode();
+                                        query.put("action", "query.all");
+                                        query.put("userAgent", "app");
+                                        query.put("version", 8);
+                                        query.put("appid", APP_ID);
+                                        query.put("ts", ts2Str);
+                                        query.put("nonce", nonce2);
+                                        query.put("sequence", ts2Str);
+                                        query.put("apikey", data.getApikey());
+
+                                        // --- CHANGED: sign dla query.all ---
+                                        String sign2Payload = APP_ID + data.getApikey() + nonce2 + ts2Str;
+                                        String sign2 = SignatureHelper.sha256Hex(APP_SECRET, sign2Payload);
+                                        query.put("sign", sign2);
+
+                                        String queryStr = mapper.writeValueAsString(query);
+
+                                        System.out.println("-> WS SEND query.all: " + queryStr);
+
+                                        session.send(Mono.just(session.textMessage(queryStr))).subscribe();
+
+                                    } catch (Exception ex) {
+                                        ex.printStackTrace();
+                                    }
+                                }
+                            })
+                            .doFinally(sig -> ping.dispose())
+                            .then();
+
+                    return Mono.zip(sendOnline, receive).then();
+                }
+        );
     }
 
     private String buildWsAuthMessage(String accessToken) {
@@ -153,7 +222,7 @@ public class EwelinkAuthClient {
 
 
                     String wsUrl = getWebSocketUrlForRegion("eu");
-                    return connectAndAuthenticateWebSocket(wsUrl, newData.getAccessToken());
+                    return connectAndAuthenticateWebSocket(wsUrl, newData);
                 });
     }
 
