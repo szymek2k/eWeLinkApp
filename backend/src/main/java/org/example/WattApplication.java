@@ -31,7 +31,7 @@ public class WattApplication implements CommandLineRunner {
     }
 
     public static void main(String[] args) {
-         SpringApplication.run(WattApplication.class, args);
+        SpringApplication.run(WattApplication.class, args);
         //SpringApplication.run(WattApplication.class, args);
         System.out.println("Hello world!");
     }

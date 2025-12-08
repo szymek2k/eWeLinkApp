@@ -1,6 +1,8 @@
 package org.example.controllers;
 
 import org.example.EwelinkAuthClient;
+import org.example.EwelinkWebSocketClient;
+import org.example.EwelinkWebSocketService;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -20,8 +22,10 @@ public class AuthCallbackController {
     private String APP_SECRET = "";
     private final String baseUrl = "https://eu-apia.coolkit.cc";
     private final String redirectUri = "http://localhost:8080/auth/return";
+    private final EwelinkWebSocketClient ws;
 
-    public AuthCallbackController() {
+    public AuthCallbackController(EwelinkWebSocketClient ws) {
+        this.ws = ws;
     }
 
     /**
@@ -38,8 +42,11 @@ public class AuthCallbackController {
         return client.exchangeCodeForTokensAndConnect(code)
                 .flatMap(auth -> {
                     // auth zawiera np. access_token, region itd.
-                    System.out.println("handleEwelinkCallback " + auth.toString());
+                    System.out.println("!!!handleEwelinkCallback " + auth.toString());
                     String token = auth.getAccessToken();
+
+                    // 🔥 URUCHOM WebSocket – nasłuch mocy urządzeń
+                    ws.connect(auth.getAccessToken(), auth.getApikey()).subscribe();
 
                     return getDevices(token)
                             .map(devicesJson ->
